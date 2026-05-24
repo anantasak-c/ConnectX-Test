@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.vercel/
+server.log
+server.err.log
+.env*
+!.env.example
+npm-debug.log*
