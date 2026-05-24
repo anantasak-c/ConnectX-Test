@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build a chart-first executive dashboard for HR compensation analysis. The dashboard should connect to Google Sheets using `.env.lopcal.txt`, and should also work from the provided CSV files as a local fallback.
+Build a chart-first executive dashboard for HR compensation analysis. The dashboard should connect to Google Sheets using a local env file such as `.env.local` or `.env.local.txt`, and should also work from the provided CSV files as a local fallback.
 
 ## Data
 
@@ -30,7 +30,7 @@ The dashboard is optimized for executives and chart reading:
 
 Use a small full-stack app:
 
-- Express server reads `.env.lopcal.txt`, fetches Google Sheets data, and falls back to local CSV files.
+- Express server reads `.env.local`, `.env.local.txt`, or `.env.lopcal.txt`, fetches Google Sheets data, and falls back to local CSV files.
 - Shared analytics module normalizes and joins data.
 - React frontend renders the dashboard with Recharts and a minimal Looker-like visual style.
 

@@ -12,7 +12,7 @@ const app = express();
 const port = Number(process.env.PORT ?? 4173);
 
 const fallbackDir = "C:\\Users\\anant\\OneDrive\\เดสก์ท็อป\\Test";
-const envPath = path.join(__dirname, ".env.lopcal.txt");
+const envFileNames = [".env.local", ".env.local.txt", ".env.lopcal.txt"];
 
 app.get("/api/dashboard-data", async (_req, res) => {
   try {
@@ -45,7 +45,7 @@ app.listen(port, () => {
 });
 
 async function readGoogleSheetsData() {
-  const env = await readEnvFile(envPath);
+  const env = await readEnvFile(envFileNames);
   const clientEmail = env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   const privateKey = env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
   const spreadsheetId = env.GOOGLE_SHEET_ID;
@@ -114,8 +114,8 @@ async function readCsv<T>(filePath: string) {
   }) as T[];
 }
 
-async function readEnvFile(filePath: string) {
-  const envText = await fs.readFile(filePath, "utf8");
+async function readEnvFile(fileNames: string[]) {
+  const envText = await readFirstExistingFile(fileNames.map((fileName) => path.join(__dirname, fileName)));
   return Object.fromEntries(
     envText
       .split(/\r?\n/)
@@ -128,6 +128,18 @@ async function readEnvFile(filePath: string) {
         return [key, value];
       }),
   );
+}
+
+async function readFirstExistingFile(filePaths: string[]) {
+  const errors: string[] = [];
+  for (const filePath of filePaths) {
+    try {
+      return await fs.readFile(filePath, "utf8");
+    } catch (error) {
+      errors.push(`${filePath}: ${getErrorMessage(error)}`);
+    }
+  }
+  throw new Error(`No local env file found. Tried: ${errors.join("; ")}`);
 }
 
 function quoteSheetName(sheetName: string) {

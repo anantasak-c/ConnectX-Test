@@ -51,7 +51,7 @@
 **Files:**
 - Create: `server.js`
 
-- [x] Read `.env.lopcal.txt` without exposing secrets.
+- [x] Read local env files without exposing secrets.
 - [x] Fetch Google Sheets tabs with service account credentials.
 - [x] Fall back to the attached CSV files under `C:\Users\anant\OneDrive\เดสก์ท็อป\Test`.
 - [x] Return normalized dashboard payload at `/api/dashboard-data`.
