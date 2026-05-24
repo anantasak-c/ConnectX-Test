@@ -15,7 +15,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { DashboardData } from "./lib/analytics";
+import { buildDashboardData, type DashboardData } from "./lib/analytics";
+import { fallbackData } from "./lib/fallbackData";
 import { compactMoney, money, percent } from "./lib/format";
 import { getCopy, nextLanguage, type Language } from "./lib/i18n";
 
@@ -34,7 +35,9 @@ export default function App() {
         return response.json();
       })
       .then(setData)
-      .catch((caught: Error) => setError(caught.message));
+      .catch(() =>
+        setData(buildDashboardData({ ...fallbackData, source: "client-fallback" })),
+      );
   }, [copy.loadError]);
 
   const outlierData = useMemo(() => {
