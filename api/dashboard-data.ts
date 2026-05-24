@@ -29,7 +29,7 @@ export default async function handler(_request: unknown, response: VercelRespons
 async function readGoogleSheetsData() {
   const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   const privateKey = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
-  const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+  const spreadsheetId = normalizeSpreadsheetId(process.env.GOOGLE_SHEET_ID);
 
   if (!clientEmail || !privateKey || !spreadsheetId) {
     throw new Error("Missing Google service account email, private key, or sheet ID.");
@@ -42,9 +42,9 @@ async function readGoogleSheetsData() {
   });
 
   const sheets = google.sheets({ version: "v4", auth });
-  const workerSheet = process.env.GOOGLE_WORKER_SHEET_NAME ?? process.env.GOOGLE_SHEET_NAME ?? "worker";
-  const titleSheet = process.env.GOOGLE_TITLE_SHEET_NAME ?? "title";
-  const bonusSheet = process.env.GOOGLE_BONUS_SHEET_NAME ?? "bonus";
+  const workerSheet = process.env.GOOGLE_WORKER_SHEET_NAME ?? "Worker";
+  const titleSheet = process.env.GOOGLE_TITLE_SHEET_NAME ?? "Title";
+  const bonusSheet = process.env.GOOGLE_BONUS_SHEET_NAME ?? "Bonus";
 
   const [workers, titles, bonuses] = await Promise.all([
     readSheet<WorkerRow>(sheets, spreadsheetId, workerSheet),
@@ -76,6 +76,14 @@ async function readSheet<T>(
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function normalizeSpreadsheetId(value: string | undefined) {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  const urlMatch = trimmed.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  if (urlMatch) return urlMatch[1];
+  return trimmed.split(/[/?#]/)[0];
 }
 
 const fallbackData: { workers: WorkerRow[]; titles: TitleRow[]; bonuses: BonusRow[] } = {

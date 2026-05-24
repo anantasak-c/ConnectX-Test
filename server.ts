@@ -48,7 +48,7 @@ async function readGoogleSheetsData() {
   const env = await readEnvFile(envFileNames);
   const clientEmail = env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   const privateKey = env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
-  const spreadsheetId = env.GOOGLE_SHEET_ID;
+  const spreadsheetId = normalizeSpreadsheetId(env.GOOGLE_SHEET_ID);
 
   if (!clientEmail || !privateKey || !spreadsheetId) {
     throw new Error("Missing Google service account email, private key, or sheet ID.");
@@ -61,9 +61,9 @@ async function readGoogleSheetsData() {
   });
 
   const sheets = google.sheets({ version: "v4", auth });
-  const workerSheet = env.GOOGLE_WORKER_SHEET_NAME ?? env.GOOGLE_SHEET_NAME ?? "worker";
-  const titleSheet = env.GOOGLE_TITLE_SHEET_NAME ?? "title";
-  const bonusSheet = env.GOOGLE_BONUS_SHEET_NAME ?? "bonus";
+  const workerSheet = env.GOOGLE_WORKER_SHEET_NAME ?? "Worker";
+  const titleSheet = env.GOOGLE_TITLE_SHEET_NAME ?? "Title";
+  const bonusSheet = env.GOOGLE_BONUS_SHEET_NAME ?? "Bonus";
 
   const [workers, titles, bonuses] = await Promise.all([
     readSheet<WorkerRow>(sheets, spreadsheetId, workerSheet),
@@ -148,4 +148,12 @@ function quoteSheetName(sheetName: string) {
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function normalizeSpreadsheetId(value: string | undefined) {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  const urlMatch = trimmed.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  if (urlMatch) return urlMatch[1];
+  return trimmed.split(/[/?#]/)[0];
 }
