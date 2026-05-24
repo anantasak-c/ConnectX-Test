@@ -1,5 +1,40 @@
 import { google } from "googleapis";
-import { buildDashboardData, type BonusRow, type TitleRow, type WorkerRow } from "../src/lib/analytics";
+
+type WorkerRow = {
+  WORKER_ID: string;
+  FIRST_NAME: string;
+  LAST_NAME: string;
+  SALARY: string | number;
+  JOINING_DATE: string;
+  DEPARTMENT: string;
+};
+
+type TitleRow = {
+  WORKER_REF_ID: string;
+  WORKER_TITLE: string;
+  AFFECTED_FROM: string;
+};
+
+type BonusRow = {
+  WORKER_REF_ID: string;
+  BONUS_AMOUNT: string | number;
+  BONUS_DATE: string;
+};
+
+type EmployeeRecord = {
+  workerId: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  department: string;
+  title: string;
+  salary: number;
+  totalBonus: number;
+  totalIncome: number;
+  joiningDate: string;
+  salaryBand: string;
+  hasBonus: boolean;
+};
 
 type VercelResponse = {
   status: (code: number) => VercelResponse;
@@ -84,6 +119,189 @@ function normalizeSpreadsheetId(value: string | undefined) {
   const urlMatch = trimmed.match(/\/d\/([a-zA-Z0-9-_]+)/);
   if (urlMatch) return urlMatch[1];
   return trimmed.split(/[/?#]/)[0];
+}
+
+function buildDashboardData(input: {
+  workers: WorkerRow[];
+  titles: TitleRow[];
+  bonuses: BonusRow[];
+  source: string;
+}) {
+  const bonusesByWorker = new Map<string, number>();
+  for (const bonus of input.bonuses) {
+    bonusesByWorker.set(
+      bonus.WORKER_REF_ID,
+      (bonusesByWorker.get(bonus.WORKER_REF_ID) ?? 0) + toNumber(bonus.BONUS_AMOUNT),
+    );
+  }
+
+  const titlesByWorker = new Map<string, TitleRow>();
+  for (const title of input.titles) {
+    const current = titlesByWorker.get(title.WORKER_REF_ID);
+    if (!current || title.AFFECTED_FROM > current.AFFECTED_FROM) {
+      titlesByWorker.set(title.WORKER_REF_ID, title);
+    }
+  }
+
+  const employees: EmployeeRecord[] = input.workers.map((worker) => {
+    const salary = toNumber(worker.SALARY);
+    const totalBonus = bonusesByWorker.get(worker.WORKER_ID) ?? 0;
+    return {
+      workerId: worker.WORKER_ID,
+      firstName: worker.FIRST_NAME,
+      lastName: worker.LAST_NAME,
+      fullName: `${worker.FIRST_NAME} ${worker.LAST_NAME}`.trim(),
+      department: worker.DEPARTMENT || "Unassigned",
+      title: titlesByWorker.get(worker.WORKER_ID)?.WORKER_TITLE ?? "Unassigned",
+      salary,
+      totalBonus,
+      totalIncome: salary + totalBonus,
+      joiningDate: worker.JOINING_DATE,
+      salaryBand: getSalaryBand(salary),
+      hasBonus: totalBonus > 0,
+    };
+  });
+
+  const totalEmployees = employees.length;
+  const totalSalary = sum(employees.map((employee) => employee.salary));
+  const totalBonus = sum(employees.map((employee) => employee.totalBonus));
+  const totalIncome = totalSalary + totalBonus;
+  const salaries = employees.map((employee) => employee.salary);
+  const employeesWithBonus = employees.filter((employee) => employee.hasBonus).length;
+
+  return {
+    source: input.source,
+    generatedAt: new Date().toISOString(),
+    kpis: {
+      totalEmployees,
+      totalSalary,
+      averageSalary: Math.round(totalSalary / totalEmployees),
+      medianSalary: median(salaries),
+      minSalary: Math.min(...salaries),
+      maxSalary: Math.max(...salaries),
+      totalBonus,
+      totalIncome,
+      employeesWithBonus,
+      bonusCoverage: percent(employeesWithBonus, totalEmployees),
+    },
+    departmentContribution: buildDepartmentContribution(employees, totalEmployees, totalIncome),
+    bonusDistribution: buildBonusDistribution(employees, totalBonus),
+    salaryBands: ["Below 100K", "100K-199K", "200K-399K", "400K+"].map((band) => ({
+      band,
+      employees: employees.filter((employee) => employee.salaryBand === band).length,
+    })),
+    titleDistribution: buildTitleDistribution(employees),
+    topCompensation: [...employees]
+      .sort((a, b) => b.totalIncome - a.totalIncome || Number(a.workerId) - Number(b.workerId))
+      .slice(0, 8),
+    employees: [...employees].sort(
+      (a, b) => b.totalIncome - a.totalIncome || Number(a.workerId) - Number(b.workerId),
+    ),
+    insights: [
+      `Compensation cost is ${compactMoney(totalIncome)}, with salary as the dominant component.`,
+      `Bonus is ${percent(totalBonus, totalIncome)}% of total income, so incentives are a small part of overall compensation.`,
+      `${employeesWithBonus} of ${totalEmployees} employees receive bonus coverage (${percent(
+        employeesWithBonus,
+        totalEmployees,
+      )}%).`,
+    ],
+  };
+}
+
+function buildDepartmentContribution(
+  employees: EmployeeRecord[],
+  totalEmployees: number,
+  totalIncome: number,
+) {
+  return [...groupByDepartment(employees)]
+    .map(([department, members]) => {
+      const totalSalary = sum(members.map((employee) => employee.salary));
+      const totalBonus = sum(members.map((employee) => employee.totalBonus));
+      const departmentIncome = totalSalary + totalBonus;
+      return {
+        department,
+        employees: members.length,
+        headcountShare: percent(members.length, totalEmployees),
+        totalSalary,
+        totalBonus,
+        totalIncome: departmentIncome,
+        incomeShare: percent(departmentIncome, totalIncome),
+        averageSalary: Math.round(totalSalary / members.length),
+        costPerHead: Math.round(departmentIncome / members.length),
+      };
+    })
+    .sort((a, b) => b.totalIncome - a.totalIncome);
+}
+
+function buildBonusDistribution(employees: EmployeeRecord[], totalBonus: number) {
+  return [...groupByDepartment(employees)]
+    .map(([department, members]) => {
+      const departmentBonus = sum(members.map((employee) => employee.totalBonus));
+      const employeesWithBonus = members.filter((employee) => employee.hasBonus).length;
+      return {
+        department,
+        totalBonus: departmentBonus,
+        employees: members.length,
+        employeesWithBonus,
+        bonusCoverage: percent(employeesWithBonus, members.length),
+        bonusShare: percent(departmentBonus, totalBonus),
+      };
+    })
+    .sort((a, b) => b.totalBonus - a.totalBonus);
+}
+
+function buildTitleDistribution(employees: EmployeeRecord[]) {
+  const counts = new Map<string, number>();
+  for (const employee of employees) {
+    counts.set(employee.title, (counts.get(employee.title) ?? 0) + 1);
+  }
+  return [...counts]
+    .map(([title, employees]) => ({ title, employees }))
+    .sort((a, b) => b.employees - a.employees || a.title.localeCompare(b.title));
+}
+
+function groupByDepartment(employees: EmployeeRecord[]) {
+  const groups = new Map<string, EmployeeRecord[]>();
+  for (const employee of employees) {
+    const members = groups.get(employee.department) ?? [];
+    members.push(employee);
+    groups.set(employee.department, members);
+  }
+  return groups;
+}
+
+function getSalaryBand(salary: number) {
+  if (salary < 100000) return "Below 100K";
+  if (salary < 200000) return "100K-199K";
+  if (salary < 400000) return "200K-399K";
+  return "400K+";
+}
+
+function median(values: number[]) {
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) return sorted[middle];
+  return Math.round((sorted[middle - 1] + sorted[middle]) / 2);
+}
+
+function percent(part: number, whole: number) {
+  if (!whole) return 0;
+  return Math.round((part / whole) * 10000) / 100;
+}
+
+function sum(values: number[]) {
+  return values.reduce((total, value) => total + value, 0);
+}
+
+function toNumber(value: string | number) {
+  if (typeof value === "number") return value;
+  return Number(value.replace(/,/g, "")) || 0;
+}
+
+function compactMoney(value: number) {
+  if (value >= 1000000) return `${Math.round((value / 1000000) * 10) / 10}M`;
+  if (value >= 1000) return `${Math.round(value / 1000)}K`;
+  return `${value}`;
 }
 
 const fallbackData: { workers: WorkerRow[]; titles: TitleRow[]; bonuses: BonusRow[] } = {
