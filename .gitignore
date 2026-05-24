@@ -6,3 +6,5 @@ server.err.log
 .env*
 !.env.example
 npm-debug.log*
+
+.vercel
